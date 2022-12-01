@@ -1,0 +1,10 @@
+torch==1.7.0
+torchvision==0.8.1
+numpy==1.21.3
+tqdm==4.62.3
+transformers==4.18.0
+learn2learn==0.1.6
+wilds==1.2.2
+pickle5==0.0.12
+scikit-learn==0.24.2
+scikit-image==0.18.3
