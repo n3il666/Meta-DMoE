@@ -26,7 +26,7 @@ Either of these commands will automatically install all required dependecies **e
 We provide the training script for the following 4 datasets from the WILDS benchmark: `iwildcam`, `camelyon`, `rxrx1`, and `FMoW`. To train the models in the paper, run the following commands:
 
 ```Training
-python run.py --dataset <dataset> --data_dir <path to data folder>
+python run.py --dataset <dataset>
 ```
 
 The data will be automatically downloaded to the data folder.
