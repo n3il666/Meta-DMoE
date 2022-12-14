@@ -1,5 +1,7 @@
-torch==1.7.0
-torchvision==0.8.1
+--find-links https://download.pytorch.org/whl/torch_stable.html
+torch==1.7.1
+torchvision==0.8.2
+
 numpy==1.21.3
 tqdm==4.62.3
 transformers==4.18.0
