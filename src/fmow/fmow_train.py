@@ -177,21 +177,12 @@ def eval(selector, models_list, student, batch_size, device, ilr=1e-5,
          test=False, progress=True, uniform_over_groups=False, root_dir='data'):
 
     if test:
-        _, _, loader, grouper, dataset = get_data_loader(root_dir=root_dir,
-                                                         batch_size=batch_size,
-                                                         test_way='ood',
-                                                         n_groups_per_batch=1,
-                                                         uniform_over_groups=uniform_over_groups,
-                                                         return_dataset=True,
-                                                         groupby_fields=['year', 'region'])
+        loader, grouper, dataset = get_test_loader(batch_size=batch_size, split='test', root_dir=root_dir,
+                                                groupby_fields=['year', 'region'], return_dataset=True)
     else:
-        _, loader, _, grouper, dataset = get_data_loader(root_dir=root_dir,
-                                                         batch_size=batch_size,
-                                                         test_way='ood',
-                                                         n_groups_per_batch=1,
-                                                         uniform_over_groups=uniform_over_groups,
-                                                         return_dataset=True,
-                                                         groupby_fields=['year', 'region'])
+        loader, grouper, dataset = get_test_loader(batch_size=batch_size, split='val', root_dir=root_dir,
+                                                groupby_fields=['year', 'region'], return_dataset=True)
+
     '''if test:
         loader, que_set, grouper = get_test_loader(batch_size=batch_size, test_way='test')
     else:
@@ -206,52 +197,52 @@ def eval(selector, models_list, student, batch_size, device, ilr=1e-5,
 
     old_domain = {}
     if progress:
-        loader = tqdm(loader)
+        loader = tqdm(iter(loader), total=len(loader))
 
-    for x_sup, y_sup, metadata in loader:
-        student_maml.module.eval()
-        selector.eval()
-        head.eval()
-        
-        z = grouper.metadata_to_group(metadata)
-        z = set(z.tolist())
-        assert len(z) == 1
-
-        x_sup = x_sup.to(device)
-        y_sup = y_sup.to(device)
-        task_model = student_maml.clone()
-        task_model.eval()
-        
-        if list(z)[0] not in old_domain:
-            with torch.no_grad():
-                logits = torch.stack([model(x_sup).detach() for model in models_list], dim=-1)
-                logits = logits.permute((0,2,1))
-                t_out = selector.get_feat(logits)  
+    for domain, domain_loader in loader:
+        adapted = False
+        for x_sup, y_sup, metadata in domain_loader:
+            student_maml.module.eval()
+            selector.eval()
+            head.eval()
             
-            feat = task_model(x_sup)
-            feat = feat.view_as(t_out)
-        
-            kl_loss = l2_loss(feat, t_out)
-            torch.cuda.empty_cache()
-            task_model.adapt(kl_loss)
-            old_domain[list(z)[0]] = task_model.state_dict()
-        else:
-            task_model.load_state_dict(old_domain[list(z)[0]])
-        
-        with torch.no_grad():
-            task_model.module.eval()
-            x_sup = task_model(x_sup)
-            x_sup = x_sup.view(x_sup.shape[0], -1)
-            s_que_out = head(x_sup)
-            pred = s_que_out.max(1, keepdim=True)[1]
-            try:
-                pred_all = torch.cat((pred_all, pred.view_as(y_sup)))
-                y_all = torch.cat((y_all, y_sup))
-                metadata_all = torch.cat((metadata_all, metadata))
-            except NameError:
-                pred_all = pred.view_as(y_sup)
-                y_all = y_sup
-                metadata_all = metadata
+            z = grouper.metadata_to_group(metadata)
+            z = set(z.tolist())
+            assert list(z)[0] == domain
+
+            x_sup = x_sup.to(device)
+            y_sup = y_sup.to(device)
+
+            if not adapted:
+                task_model = student_maml.clone()
+                task_model.eval()
+                with torch.no_grad():
+                    logits = torch.stack([model(x_sup).detach() for model in models_list], dim=-1)
+                    logits = logits.permute((0,2,1))
+                    t_out = selector.get_feat(logits)  
+                
+                feat = task_model(x_sup)
+                feat = feat.view_as(t_out)
+            
+                kl_loss = l2_loss(feat, t_out)
+                torch.cuda.empty_cache()
+                task_model.adapt(kl_loss)
+                adapted = True
+            
+            with torch.no_grad():
+                task_model.module.eval()
+                x_sup = task_model(x_sup)
+                x_sup = x_sup.view(x_sup.shape[0], -1)
+                s_que_out = head(x_sup)
+                pred = s_que_out.max(1, keepdim=True)[1]
+                try:
+                    pred_all = torch.cat((pred_all, pred.view_as(y_sup)))
+                    y_all = torch.cat((y_all, y_sup))
+                    metadata_all = torch.cat((metadata_all, metadata))
+                except NameError:
+                    pred_all = pred.view_as(y_sup)
+                    y_all = y_sup
+                    metadata_all = metadata
 
     acc, worst_acc = get_fmow_metrics(pred_all, y_all, metadata_all, dataset)
     return worst_acc, acc

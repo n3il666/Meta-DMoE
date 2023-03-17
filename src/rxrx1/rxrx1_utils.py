@@ -15,7 +15,7 @@ import time
 import os
 import wilds
 from wilds import get_dataset
-from wilds.common.data_loaders import get_train_loader
+from wilds.common.data_loaders import get_train_loader, get_eval_loader
 from wilds.common.grouper import CombinatorialGrouper
 
 # Utils
@@ -32,7 +32,10 @@ def split_domains(num_experts, root_dir='data'):
     return all_split
 
 def get_subset_with_domain(dataset, split, domain=None, transform=None):
-    subset = dataset.get_subset(split, transform=transform)
+    if type(dataset) == wilds.datasets.wilds_dataset.WILDSSubset:
+        subset = copy.deepcopy(dataset)
+    else:
+        subset = dataset.get_subset(split, transform=transform)
     if domain is not None:
         idx = np.argwhere(np.isin(subset.dataset.metadata_array[:,1][subset.indices], domain)).ravel()
         subset.indices = subset.indices[idx]
@@ -109,6 +112,23 @@ def get_mask_grouper(root_dir='data'):
     dataset = get_dataset(dataset='rxrx1', download=True, root_dir=root_dir)
     grouper = CombinatorialGrouper(dataset, ['experiment'])
     return grouper
+
+def get_test_loader(batch_size=16, split='val', root_dir='data'):
+    dataset = get_dataset(dataset='rxrx1', download=True, root_dir=root_dir)
+    grouper = CombinatorialGrouper(dataset, ['experiment'])
+    
+    transform = initialize_image_base_transform(dataset)
+    
+    eval_data = get_subset_with_domain(dataset, split, domain=None, transform=transform)
+    all_domains = list(set(grouper.metadata_to_group(eval_data.dataset.metadata_array[eval_data.indices]).tolist()))
+    test_loader = []
+
+    for domain in all_domains:
+        domain_data = get_subset_with_domain(eval_data, split, domain=domain, transform=transform)
+        domain_loader = get_eval_loader('standard', domain_data, batch_size=batch_size)
+        test_loader.append((domain, domain_loader))
+
+    return test_loader, grouper
 
 def save_model(model, name, epoch, test_way='ood'):
     if not os.path.exists("model/rxrx1"):

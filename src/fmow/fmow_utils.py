@@ -14,7 +14,7 @@ import time
 import os
 import wilds
 from wilds import get_dataset
-from wilds.common.data_loaders import get_train_loader
+from wilds.common.data_loaders import get_train_loader, get_eval_loader
 from wilds.common.grouper import CombinatorialGrouper
 from wilds.common.utils import split_into_groups
 
@@ -94,6 +94,25 @@ def get_data_loader(batch_size=16, domain=None, test_way='id',
     if return_dataset:
         return train_loader, val_loader, test_loader, grouper, dataset
     return train_loader, val_loader, test_loader, grouper
+
+def get_test_loader(batch_size=16, split='val', root_dir='data', groupby_fields=['year'], return_dataset=False):
+    dataset = get_dataset(dataset='fmow', download=True, root_dir=root_dir)
+    grouper = CombinatorialGrouper(dataset, groupby_fields)
+    
+    transform = initialize_image_base_transform(dataset)
+    
+    eval_data = get_subset_with_domain(dataset, split, domain=None, transform=transform)
+    all_domains = list(set(grouper.metadata_to_group(eval_data.dataset.metadata_array[eval_data.indices]).tolist()))
+    test_loader = []
+
+    for domain in all_domains:
+        domain_data = get_subset_with_domain(eval_data, split, domain=domain, transform=transform, grouper=grouper)
+        domain_loader = get_eval_loader('standard', domain_data, batch_size=batch_size)
+        test_loader.append((domain, domain_loader))
+
+    if return_dataset:
+        return test_loader, grouper, dataset
+    return test_loader, grouper
 
 def get_mask_grouper(root_dir='data'):
     dataset = get_dataset(dataset='fmow', download=True, root_dir=root_dir)
